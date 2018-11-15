@@ -1,7 +1,6 @@
 package net.noboard.invoker.parallel;
 
 import net.noboard.invoker.Invoker;
-import net.noboard.invoker.parallel.ParallelInvokerChain;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -19,14 +18,19 @@ public abstract class AbstractInvoker implements Invoker {
     private Consumer<Invoker> normalEnd;
 
     /**
-     * 是否已经处理catch事件
+     * 是否处在捕获状态
      */
-    private boolean isCatched = false;
+    private boolean isInCatchStatus = false;
 
     /**
-     * 是否正在执行中
+     * 是否处在执行中状态
      */
-    private boolean isRunning = false;
+    private boolean isInRunningStatus = false;
+
+    /**
+     * 是否处在正常结束预备状态
+     */
+    private boolean isInNormalEndPreparStatus = false;
 
     /**
      * 主线程继续的条件是：invoke执行结束；catchConsumer执行结束。
@@ -79,14 +83,14 @@ public abstract class AbstractInvoker implements Invoker {
      */
     @Override
     public void start() {
-        if (!this.intoRunning()) {
+        if (!this.intoRunningStatus()) {
             return;
         }
 
         if (this.catchConsumer != null) {
             mainThreadCountDown = new CountDownLatch(1);
             this.invoke(this.chain);
-            if (this.isCatched) {
+            if (this.isInCatchStatus) {
                 try {
                     mainThreadCountDown.await();
                 } catch (InterruptedException e) {
@@ -97,11 +101,11 @@ public abstract class AbstractInvoker implements Invoker {
             this.invoke(this.chain);
         }
 
-        if (!isCatched && normalEnd != null) {
+        if (this.intoNormalEndPreparStatus()) {
             normalEnd.accept(this);
         }
 
-        this.isRunning = false;
+        this.intoEndingStatus();
     }
 
     /**
@@ -114,7 +118,7 @@ public abstract class AbstractInvoker implements Invoker {
      */
     @Override
     public void reject(Exception e) {
-        if (this.intoCatch()) {
+        if (this.intoCatchStatus()) {
             this.onReject(e);
             if (this.catchConsumer != null) {
                 this.catchConsumer.accept(e);
@@ -126,14 +130,14 @@ public abstract class AbstractInvoker implements Invoker {
     /**
      * 请求进入捕获状态，返回成功或者失败
      *
-     * 如果不在捕获状态，则可以进入捕获状态（返回true），且将状态置为捕获状态；
+     * 如果不在捕获状态，且在运行中状态，则可以进入捕获状态（返回true），且将状态置为捕获状态；
      * 如果已经在捕获状态，则不可以再次进入捕获状态（返回false）。
      *
      * @return
      */
-    private synchronized boolean intoCatch() {
-        if (!this.isCatched) {
-            this.isCatched = true;
+    private synchronized boolean intoCatchStatus() {
+        if (!this.isInCatchStatus && this.isInRunningStatus && !this.isInNormalEndPreparStatus) {
+            this.isInCatchStatus = true;
             return true;
         } else {
             return false;
@@ -144,22 +148,44 @@ public abstract class AbstractInvoker implements Invoker {
      * 请求进入运行状态，返回成功或者失败
      * @return
      */
-    private synchronized boolean intoRunning() {
-        if (!this.isRunning) {
-            this.isRunning = true;
-            this.isCatched = false;
+    private synchronized boolean intoRunningStatus() {
+        if (!this.isInRunningStatus) {
+            this.isInRunningStatus = true;
+            this.isInCatchStatus = false;
+            this.isInNormalEndPreparStatus = false;
             return true;
         } else {
             return false;
         }
     }
 
-    protected synchronized boolean isRunning() {
-        return this.isRunning;
+    /**
+     * 请求进入正常结束预备状态（正常结束前会尝试执行normalEnd回调，直到该回调执行完成才正真进入结束状态）
+     *
+     * 系统不处在捕获状态 并且 系统处在运行状态 并且 正常结束回调存在 => 才进入正常结束状态
+     */
+    private synchronized boolean intoNormalEndPreparStatus() {
+        if (!this.isInCatchStatus && this.isInRunningStatus && normalEnd != null) {
+            this.isInNormalEndPreparStatus = true;
+            return true;
+        } else {
+            return false;
+        }
     }
 
-    protected synchronized boolean isCatched() {
-        return this.isCatched;
+    /**
+     * 进入结束状态
+     */
+    private synchronized void intoEndingStatus() {
+        this.isInRunningStatus = false;
+    }
+
+    protected synchronized boolean isInRunningStatus() {
+        return this.isInRunningStatus;
+    }
+
+    protected synchronized boolean isInCatchStatus() {
+        return this.isInCatchStatus;
     }
 
     abstract protected void invoke(List<ParallelInvokerChain> chain);

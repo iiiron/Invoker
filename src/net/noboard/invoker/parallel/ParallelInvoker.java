@@ -34,7 +34,7 @@ public class ParallelInvoker extends AbstractInvoker {
     @Override
     protected void invoke(List<ParallelInvokerChain> chain) {
         for (ParallelInvokerChain parallel : chain) {
-            if (this.isCatched()) {
+            if (this.isInCatchStatus()) {
                 return;
             }
 

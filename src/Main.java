@@ -11,17 +11,17 @@ public class Main {
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
-            invoker.reject(new Exception("e1"));
+//            invoker.reject(new Exception("e1"));
             System.out.println("2");
         }).and(invoker -> {
             System.out.println("3");
-            invoker.reject(new Exception("e2"));
+//            invoker.reject(new Exception("e2"));
             System.out.println("4");
         }).then(invoker -> { // then将前后断开，只有前面的回调全部执行完，且没有发生catched（没有调用reject），才会执行then后的函数，此处调用了reject，所以"then 开始"不会被打印
             System.out.println("then 开始");
-            invoker.reject(new Exception());
             try {
-                Thread.sleep(5000);
+                Thread.sleep(3000);
+                invoker.reject(new Exception());
             } catch (InterruptedException e) {
                 e.printStackTrace();
             }
@@ -30,5 +30,11 @@ public class Main {
             System.out.println(e.getMessage());
         }).start();
         System.out.println("main continue");
+        try {
+            Thread.sleep(5000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+        System.out.println("main end");
     }
 }
