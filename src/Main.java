@@ -1,5 +1,3 @@
-import net.noboard.invoker.parallel.ParallelInvoker;
-
 public class Main {
     public static void main(String[] args) {
         // 你可以通过注释下面的部分代码来探索它的功能，
