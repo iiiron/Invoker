@@ -13,18 +13,20 @@ import java.util.function.Consumer;
  * reject保证的是：
  * 当reject的时候，主线程停止等待；当reject的时候，还未启动的串行任务（线程）将不会被启动；
  * 当reject的时候，catched立即执行；只有第一个到达的reject会执行catched，后续将被拒绝（跳过）；
+ * 当reject的时候，主线程会等待直到catched回调执行完毕
  *
  * reject不能的是：
- * 打断当前线程；打断并行线程；打断并行线程的创建（reject不能打断创建一组并行任务，即，
- * 一旦开始创建一组并行任务，它们将被成功创建）；
+ * 打断当前线程；
+ * 打断并行线程；
+ * 打断并行线程的创建（reject不能打断创建一组并行任务，即，一旦开始创建一组并行任务，它们将被成功创建）；
+ * ## 综上，reject不能打断线程，如果你想让线程提前结束，需要自己使用return语句，但你也仅能打断当前线程 ##
  *
  * continued用来标记一组并行任务，该组任务的执行不会阻塞主线程，但该组任务有能力触发reject。
- * 当被continued标记的任务组触发reject时，catched会被立即调用，正在阻塞主线程的任务会释放线程锁，让主线程继续
- * 执行。
+ * 如果reject触发时主程序已经进入“正常结束预备状态”或“结束状态”，则catched不会被调用。
+ * 注意：如果执行器再次开始新一轮执行，而此时上一次执行中的continued任务组触发了reject，则catched
+ * 会被执行。
  *
- * 当continued标记参与进来时，会出现主线程已经在执行后续代码的时候，catched被调用的情况，
- * 你要注意这种情况下给程序带来的副作用。可以保证的是，当没有continued标记任何任务时，主
- * 程序一定会在catched被调用后才向后执行。
+ * 如果执行器处于“执行中状态”，start方法不会再次启动执行器
  *
  * @author wanxm
  */
@@ -38,7 +40,9 @@ public class ParallelInvoker implements Invoker {
 
     private Consumer<Invoker> normalEnd;
 
-    private CountDownLatch currentCountDownLatch;
+    private CountDownLatch currentChainThreadLock;
+
+    private CountDownLatch mainThreadLock;
 
     /**
      * 是否处在捕获状态
@@ -55,55 +59,59 @@ public class ParallelInvoker implements Invoker {
      */
     private boolean isInNormalEndPreparStatus = false;
 
-    /**
-     * 主线程继续的条件是：invoke执行结束；catchConsumer执行结束。
-     */
-    private CountDownLatch mainThreadCountDown;
-
     @Override
-    public Invoker call(Consumer<Invoker> consumer) {
-        chain = new ArrayList<>();
-        current = new ParallelInvokerChain();
-        current.addConsumer(consumer);
-        chain.add(current);
+    public synchronized Invoker call(Consumer<Invoker> consumer) {
+        if (!isInRunningStatus) {
+            chain = new ArrayList<>();
+            current = new ParallelInvokerChain();
+            current.addConsumer(consumer);
+            chain.add(current);
+        }
         return this;
     }
 
     @Override
-    public Invoker then(Consumer<Invoker> consumer) {
-        current = new ParallelInvokerChain();
-        current.addConsumer(consumer);
-        chain.add(current);
+    public synchronized Invoker then(Consumer<Invoker> consumer) {
+        if (!isInRunningStatus) {
+            current = new ParallelInvokerChain();
+            current.addConsumer(consumer);
+            chain.add(current);
+        }
         return this;
     }
 
     @Override
-    public Invoker and(Consumer<Invoker> consumer) {
-        current.addConsumer(consumer);
+    public synchronized Invoker and(Consumer<Invoker> consumer) {
+        if (!isInRunningStatus) {
+            current.addConsumer(consumer);
+        }
         return this;
     }
 
     @Override
-    public Invoker catched(Consumer<Exception> consumer) {
-        catchConsumer = consumer;
+    public synchronized Invoker catched(Consumer<Exception> consumer) {
+        if (!isInRunningStatus) {
+            catchConsumer = consumer;
+        }
         return this;
     }
 
     @Override
-    public Invoker normalEnd(Consumer<Invoker> consumer) {
-        normalEnd = consumer;
+    public synchronized Invoker normalEnd(Consumer<Invoker> consumer) {
+        if (!isInRunningStatus) {
+            normalEnd = consumer;
+        }
         return this;
     }
 
     @Override
-    public Invoker continued() {
-        current.setWait(false);
+    public synchronized Invoker continued() {
+        if (!isInRunningStatus) {
+            current.setWait(false);
+        }
         return this;
     }
 
-    /**
-     * 当invoke执行过程中，发生了reject，则invoke结束时需要等待执行catchConsumer的线程。
-     */
     @Override
     public void start() {
         if (!this.intoRunningStatus()) {
@@ -111,7 +119,7 @@ public class ParallelInvoker implements Invoker {
         }
 
         if (this.catchConsumer != null) {
-            mainThreadCountDown = new CountDownLatch(1);
+            mainThreadLock = new CountDownLatch(1);
             this.invoke(this.chain);
             if (this.intoNormalEndPreparStatus()) {
                 if (this.normalEnd != null) {
@@ -119,7 +127,7 @@ public class ParallelInvoker implements Invoker {
                 }
             } else {
                 try {
-                    mainThreadCountDown.await();
+                    mainThreadLock.await();
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
@@ -134,21 +142,13 @@ public class ParallelInvoker implements Invoker {
         this.intoEndingStatus();
     }
 
-    /**
-     * reject不能打断任何线程的执行，它所能保证的只是：
-     * catchConsumer立即执行；
-     * 主线程一定等待catchConsumer的执行；
-     * catchConsumer只执行一次。
-     *
-     * @param e
-     */
     @Override
     public void reject(Exception e) {
         if (this.intoCatchStatus()) {
             this.onReject(e);
             if (this.catchConsumer != null) {
                 this.catchConsumer.accept(e);
-                mainThreadCountDown.countDown();
+                mainThreadLock.countDown();
             }
         }
     }
@@ -172,6 +172,7 @@ public class ParallelInvoker implements Invoker {
 
     /**
      * 请求进入运行状态，返回成功或者失败
+     *
      * @return
      */
     private synchronized boolean intoRunningStatus() {
@@ -188,7 +189,7 @@ public class ParallelInvoker implements Invoker {
     /**
      * 请求进入正常结束预备状态（正常结束前会尝试执行normalEnd回调，直到该回调执行完成才正真进入结束状态）
      *
-     * 系统不处在捕获状态 并且 系统处在运行状态 => 才进入正常结束预备状态
+     * 系统不处在捕获状态 && 系统处在运行状态 => 才进入正常结束预备状态
      */
     private synchronized boolean intoNormalEndPreparStatus() {
         if (!this.isInCatchStatus && this.isInRunningStatus) {
@@ -223,7 +224,7 @@ public class ParallelInvoker implements Invoker {
             try {
                 List<Consumer<Invoker>> list = parallel.getChain();
                 parallel.setCurrentCountDownLatch(new CountDownLatch(list.size()));
-                currentCountDownLatch = parallel.getCurrentCountDownLatch();
+                currentChainThreadLock = parallel.getCurrentCountDownLatch();
                 for (Consumer<Invoker> consumer : list) {
                     new Thread(() -> {
                         try {
@@ -253,8 +254,8 @@ public class ParallelInvoker implements Invoker {
      * @param e
      */
     private void onReject(Exception e) {
-        while (currentCountDownLatch.getCount() > 0) {
-            currentCountDownLatch.countDown();
+        while (currentChainThreadLock.getCount() > 0) {
+            currentChainThreadLock.countDown();
         }
     }
 }
