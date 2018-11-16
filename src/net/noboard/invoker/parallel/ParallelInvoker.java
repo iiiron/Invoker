@@ -113,7 +113,11 @@ public class ParallelInvoker implements Invoker {
         if (this.catchConsumer != null) {
             mainThreadCountDown = new CountDownLatch(1);
             this.invoke(this.chain);
-            if (this.isInCatchStatus) {
+            if (this.intoNormalEndPreparStatus()) {
+                if (this.normalEnd != null) {
+                    normalEnd.accept(this);
+                }
+            } else {
                 try {
                     mainThreadCountDown.await();
                 } catch (InterruptedException e) {
@@ -122,10 +126,9 @@ public class ParallelInvoker implements Invoker {
             }
         } else {
             this.invoke(this.chain);
-        }
-
-        if (this.intoNormalEndPreparStatus()) {
-            normalEnd.accept(this);
+            if (this.intoNormalEndPreparStatus() && this.normalEnd != null) {
+                normalEnd.accept(this);
+            }
         }
 
         this.intoEndingStatus();
@@ -145,8 +148,8 @@ public class ParallelInvoker implements Invoker {
             this.onReject(e);
             if (this.catchConsumer != null) {
                 this.catchConsumer.accept(e);
+                mainThreadCountDown.countDown();
             }
-            mainThreadCountDown.countDown();
         }
     }
 
@@ -185,10 +188,10 @@ public class ParallelInvoker implements Invoker {
     /**
      * 请求进入正常结束预备状态（正常结束前会尝试执行normalEnd回调，直到该回调执行完成才正真进入结束状态）
      *
-     * 系统不处在捕获状态 并且 系统处在运行状态 并且 正常结束回调存在 => 才进入正常结束状态
+     * 系统不处在捕获状态 并且 系统处在运行状态 => 才进入正常结束预备状态
      */
     private synchronized boolean intoNormalEndPreparStatus() {
-        if (!this.isInCatchStatus && this.isInRunningStatus && normalEnd != null) {
+        if (!this.isInCatchStatus && this.isInRunningStatus) {
             this.isInNormalEndPreparStatus = true;
             return true;
         } else {
