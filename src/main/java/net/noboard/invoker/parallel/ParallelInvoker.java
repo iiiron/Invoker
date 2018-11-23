@@ -5,6 +5,8 @@ import net.noboard.invoker.Invoker;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.function.Consumer;
 
 /**
@@ -53,6 +55,8 @@ public class ParallelInvoker implements Invoker {
     private CountDownLatch currentChainThreadLock;
 
     private CountDownLatch mainThreadLock;
+
+    private static ExecutorService excutorService = Executors.newCachedThreadPool();
 
     /**
      * 是否处在捕获状态
@@ -236,7 +240,7 @@ public class ParallelInvoker implements Invoker {
                 parallel.setCurrentCountDownLatch(new CountDownLatch(list.size()));
                 currentChainThreadLock = parallel.getCurrentCountDownLatch();
                 for (Consumer<Invoker> consumer : list) {
-                    new Thread(() -> {
+                    excutorService.execute(() -> {
                         try {
                             consumer.accept(this);
                         } catch (Exception e) {
@@ -245,7 +249,7 @@ public class ParallelInvoker implements Invoker {
                         } finally {
                             parallel.getCurrentCountDownLatch().countDown();
                         }
-                    }).start();
+                    });
                 }
                 if (parallel.isWait()) {
                     parallel.getCurrentCountDownLatch().await();
