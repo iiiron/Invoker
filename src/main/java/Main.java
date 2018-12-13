@@ -1,75 +1,78 @@
 import net.noboard.invoker.parallel.ParallelInvoker;
 
 import java.util.Random;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Main {
     public static void main(String[] args) {
-        // 你可以通过注释下面的部分代码来探索它的功能，
-        // 一些重要的说明请到代码中寻找，注释写的很清楚
+        AtomicBoolean atomicBoolean = new AtomicBoolean(true);
         ParallelInvoker parallelInvoker = new ParallelInvoker();
         parallelInvoker.call(invoker -> { // call方法启动执行器
-            //获取线程数
-            ThreadGroup threadGroup = Thread.currentThread().getThreadGroup();
-            while(threadGroup.getParent() != null){
-                threadGroup = threadGroup.getParent();
+            while (atomicBoolean.get()) {
+                Main.printThreadNum();
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
             }
-            int totalThread = threadGroup.activeCount();
-            System.out.println(totalThread);
         });
+
+
 
         int i = 0;
-        for ( ; i < Math.random() * 1000; i++) {
+        for ( ; i < Math.random() * 10000; i++) {
             parallelInvoker.and(invoker -> {
-                System.out.println("go i");
-                //获取线程数
-                ThreadGroup threadGroup = Thread.currentThread().getThreadGroup();
-                while(threadGroup.getParent() != null){
-                    threadGroup = threadGroup.getParent();
-                }
-                int totalThread = threadGroup.activeCount();
-                System.out.println(totalThread);
+                exc(0);
             });
         }
 
-        parallelInvoker.then(invoker -> {
-            try {
-                Thread.sleep(1000000);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
-            }
-            System.out.println("then");
-        });
+        parallelInvoker.continued();
+        parallelInvoker.start();
 
-        int t = 0;
-        for ( ; t < Math.random() * 10; t++) {
-            parallelInvoker.and(invoker -> {
-                System.out.println("go t");
-                //获取线程数
-                ThreadGroup threadGroup = Thread.currentThread().getThreadGroup();
-                while(threadGroup.getParent() != null){
-                    threadGroup = threadGroup.getParent();
-                }
-                int totalThread = threadGroup.activeCount();
-                System.out.println(totalThread);
-            });
-        }
-
-        parallelInvoker.then(invoker -> { // then将前后断开，只有前面的回调全部执行完，且没有发生catched（没有调用reject），才会执行then后的函数，此处调用了reject，所以"then 开始"不会被打印
-            System.out.println("then 开始");
-
-            System.out.println("then 结束");
-        }).continued().normalEnd(invoker -> {
-            System.out.println("normalEnd");
-        }).catched(e -> { // continued标识可让主线程不等待被标记点的执行
-            System.out.println(e.getMessage());
-        }).start();
-
-        System.out.println("main continue");
+        System.out.println("main continue: " + i);
         try {
-            Thread.sleep(50);
+            Thread.sleep(600000);
         } catch (InterruptedException e) {
             e.printStackTrace();
         }
-        System.out.println("main end " + i + " " + t);
+        atomicBoolean.set(false);
+    }
+
+    private static void printThreadNum() {
+        //获取线程数
+        ThreadGroup threadGroup = Thread.currentThread().getThreadGroup();
+        while(threadGroup.getParent() != null){
+            threadGroup = threadGroup.getParent();
+        }
+        int totalThread = threadGroup.activeCount();
+        System.out.println(totalThread);
+    }
+
+    private static void exc(int i) {
+        ParallelInvoker parallelInvoker = new ParallelInvoker();
+        parallelInvoker.call(invoker -> { // call方法启动执行器
+            print("GO.call." + i);
+        }).then(invoker -> {
+            try {
+                Thread.sleep(800);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            print("GO.then." + i);
+        }).and(invoker -> {
+            print("GO.and1." + i);
+        }).and(invoker -> {
+            print("GO.and2." + i);
+        }).continued().start();
+    }
+
+    private static void print(String i) {
+        System.out.println(i);
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
     }
 }
