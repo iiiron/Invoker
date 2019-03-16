@@ -1,6 +1,5 @@
 package net.noboard.invoker;
 
-import java.util.function.Consumer;
 
 public interface Invoker {
     Invoker call(Consumer<Invoker> consumer);

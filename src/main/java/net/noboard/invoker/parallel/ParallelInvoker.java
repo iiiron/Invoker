@@ -1,5 +1,6 @@
 package net.noboard.invoker.parallel;
 
+import net.noboard.invoker.Consumer;
 import net.noboard.invoker.Invoker;
 
 import java.util.ArrayList;
@@ -7,7 +8,6 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.function.Consumer;
 
 /**
  * 并行执行器
@@ -230,7 +230,7 @@ public class ParallelInvoker implements Invoker {
     }
 
     private void invoke(List<ParallelInvokerChain> chain) {
-        for (ParallelInvokerChain parallel : chain) {
+        for (final ParallelInvokerChain parallel : chain) {
             if (this.isInCatchStatus()) {
                 return;
             }
@@ -239,15 +239,19 @@ public class ParallelInvoker implements Invoker {
                 List<Consumer<Invoker>> list = parallel.getChain();
                 parallel.setCurrentCountDownLatch(new CountDownLatch(list.size()));
                 currentChainThreadLock = parallel.getCurrentCountDownLatch();
-                for (Consumer<Invoker> consumer : list) {
-                    excutorService.execute(() -> {
-                        try {
-                            consumer.accept(this);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                            reject(e);
-                        } finally {
-                            parallel.getCurrentCountDownLatch().countDown();
+                final Invoker invoker = this;
+                for (final Consumer<Invoker> consumer : list) {
+                    excutorService.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                                try {
+                                    consumer.accept(invoker);
+                                } catch (Exception e) {
+                                    e.printStackTrace();
+                                    reject(e);
+                                } finally {
+                                    parallel.getCurrentCountDownLatch().countDown();
+                                }
                         }
                     });
                 }

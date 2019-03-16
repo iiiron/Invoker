@@ -1,11 +1,11 @@
 package net.noboard.invoker.parallel;
 
+import net.noboard.invoker.Consumer;
 import net.noboard.invoker.Invoker;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
-import java.util.function.Consumer;
 
 /**
  * 并行执行链
