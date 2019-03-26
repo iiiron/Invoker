@@ -59,3 +59,37 @@
 ## 其他
 
 java提供了AtomicBoolean类，我考虑过使用这个类，但当intoRunningStatus方法被并发的调用时，可能出现A线程通过了if判断，B线程也通过了if判断，此时会导致A,B两个线程都能使执行器启动，导致线程不安全。所以（其他“into”方法同理）需要使用synchronized关键字，将进入某种状态时的判断和写入操作改写为原子性的。call方法（及和它类似的then，and等接口）也不能使用AtomicBoolean，当A线程通过了call方法中的if语句，B线程获得了CPU执行，从而开始运行invoke函数，此时A线程再次获得CPU执行，从而修改了invoker chain，这就会导致线程不安全问题。综上，使用synchronized关键字是比较合理的做法。
+
+## 示例
+
+```java
+
+public class Main {
+    public static void main(String[] args) {
+        new ParallelInvoker.call(invoker -> { // call方法启动执行器
+            print("任务组1 任务1");
+        }).then(invoker -> {
+            try {
+                Thread.sleep(800);
+                print("任务组2 任务1");
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }).and(invoker -> {
+            print("任务组2 任务2");
+        }).continued().then(invoker -> {
+            print("任务组3 任务1");
+        }).start();
+    }
+
+    private static void print(String i) {
+        System.out.println(i);
+        try {
+            Thread.sleep(1000);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+}
+
+```
