@@ -1,5 +1,7 @@
 package net.noboard.invoker.parallel;
 
+import net.noboard.invoker.Caller;
+import net.noboard.invoker.CallerWithoutException;
 import net.noboard.invoker.Invoker;
 
 import java.util.ArrayList;
@@ -21,13 +23,15 @@ public class ParallelInvoker implements Invoker {
 
     private Consumer<Exception> catchConsumer;
 
-    private Consumer<Invoker> normalEnd;
+    private CallerWithoutException normalEnd;
 
     private CountDownLatch currentChainThreadLock;
 
     private CountDownLatch mainThreadLock;
 
-    private static ExecutorService excutorService = Executors.newCachedThreadPool();
+    private static final ExecutorService executorService = Executors.newCachedThreadPool();
+
+    private final ExecutorService executor;
 
     /**
      * 是否处在捕获状态
@@ -42,10 +46,18 @@ public class ParallelInvoker implements Invoker {
     /**
      * 是否处在正常结束预备状态
      */
-    private boolean isInNormalEndPreparStatus = false;
+    private boolean isInNormalEndPrepareStatus = false;
+
+    public ParallelInvoker () {
+        this.executor = executorService;
+    }
+
+    public ParallelInvoker (ExecutorService executorService) {
+        this.executor = executorService;
+    }
 
     @Override
-    public synchronized Invoker call(Consumer<Invoker> consumer) {
+    public synchronized Invoker call(Caller consumer) {
         if (!isInRunningStatus) {
             chain = new ArrayList<>();
             current = new ParallelInvokerChain();
@@ -56,7 +68,7 @@ public class ParallelInvoker implements Invoker {
     }
 
     @Override
-    public synchronized Invoker then(Consumer<Invoker> consumer) {
+    public synchronized Invoker then(Caller consumer) {
         if (!isInRunningStatus) {
             current = new ParallelInvokerChain();
             current.addConsumer(consumer);
@@ -66,7 +78,7 @@ public class ParallelInvoker implements Invoker {
     }
 
     @Override
-    public synchronized Invoker and(Consumer<Invoker> consumer) {
+    public synchronized Invoker and(Caller consumer) {
         if (!isInRunningStatus) {
             current.addConsumer(consumer);
         }
@@ -74,7 +86,7 @@ public class ParallelInvoker implements Invoker {
     }
 
     @Override
-    public synchronized Invoker catched(Consumer<Exception> consumer) {
+    public synchronized Invoker abnormal(Consumer<Exception> consumer) {
         if (!isInRunningStatus) {
             catchConsumer = consumer;
         }
@@ -82,7 +94,7 @@ public class ParallelInvoker implements Invoker {
     }
 
     @Override
-    public synchronized Invoker normalEnd(Consumer<Invoker> consumer) {
+    public synchronized Invoker normalEnd(CallerWithoutException consumer) {
         if (!isInRunningStatus) {
             normalEnd = consumer;
         }
@@ -108,7 +120,7 @@ public class ParallelInvoker implements Invoker {
             this.invoke(this.chain);
             if (this.intoNormalEndPreparStatus()) {
                 if (this.normalEnd != null) {
-                    normalEnd.accept(this);
+                    normalEnd.accept();
                 }
             } else {
                 try {
@@ -120,15 +132,14 @@ public class ParallelInvoker implements Invoker {
         } else {
             this.invoke(this.chain);
             if (this.intoNormalEndPreparStatus() && this.normalEnd != null) {
-                normalEnd.accept(this);
+                normalEnd.accept();
             }
         }
 
         this.intoEndingStatus();
     }
 
-    @Override
-    public void reject(Exception e) {
+    private void reject(Exception e) {
         if (this.intoCatchStatus()) {
             while (currentChainThreadLock.getCount() > 0) {
                 currentChainThreadLock.countDown();
@@ -149,7 +160,7 @@ public class ParallelInvoker implements Invoker {
      * @return
      */
     private synchronized boolean intoCatchStatus() {
-        if (!this.isInCatchStatus && this.isInRunningStatus && !this.isInNormalEndPreparStatus) {
+        if (!this.isInCatchStatus && this.isInRunningStatus && !this.isInNormalEndPrepareStatus) {
             this.isInCatchStatus = true;
             return true;
         } else {
@@ -166,7 +177,7 @@ public class ParallelInvoker implements Invoker {
         if (!this.isInRunningStatus) {
             this.isInRunningStatus = true;
             this.isInCatchStatus = false;
-            this.isInNormalEndPreparStatus = false;
+            this.isInNormalEndPrepareStatus = false;
             return true;
         } else {
             return false;
@@ -180,7 +191,7 @@ public class ParallelInvoker implements Invoker {
      */
     private synchronized boolean intoNormalEndPreparStatus() {
         if (!this.isInCatchStatus && this.isInRunningStatus) {
-            this.isInNormalEndPreparStatus = true;
+            this.isInNormalEndPrepareStatus = true;
             return true;
         } else {
             return false;
@@ -209,15 +220,14 @@ public class ParallelInvoker implements Invoker {
             }
 
             try {
-                List<Consumer<Invoker>> list = parallel.getChain();
+                List<Caller> list = parallel.getChain();
                 parallel.setCurrentCountDownLatch(new CountDownLatch(list.size()));
                 currentChainThreadLock = parallel.getCurrentCountDownLatch();
-                for (Consumer<Invoker> consumer : list) {
-                    excutorService.execute(() -> {
+                for (Caller consumer : list) {
+                    executor.execute(() -> {
                         try {
-                            consumer.accept(this);
+                            consumer.accept();
                         } catch (Exception e) {
-                            e.printStackTrace();
                             reject(e);
                         } finally {
                             parallel.getCurrentCountDownLatch().countDown();

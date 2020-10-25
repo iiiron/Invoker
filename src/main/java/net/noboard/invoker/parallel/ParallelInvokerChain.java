@@ -1,5 +1,6 @@
 package net.noboard.invoker.parallel;
 
+import net.noboard.invoker.Caller;
 import net.noboard.invoker.Invoker;
 
 import java.util.ArrayList;
@@ -16,12 +17,12 @@ public class ParallelInvokerChain {
      */
     private boolean isWait = true;
 
-    private List<Consumer<Invoker>> chain = new ArrayList<>();
+    private List<Caller> chain = new ArrayList<>();
 
     private CountDownLatch currentCountDownLatch;
 
-    public void addConsumer(Consumer<Invoker> consumer) {
-        chain.add(consumer);
+    public void addConsumer(Caller caller) {
+        chain.add(caller);
     }
 
     public boolean isWait() {
@@ -32,11 +33,11 @@ public class ParallelInvokerChain {
         isWait = wait;
     }
 
-    public List<Consumer<Invoker>> getChain() {
+    public List<Caller> getChain() {
         return chain;
     }
 
-    public void setChain(List<Consumer<Invoker>> chain) {
+    public void setChain(List<Caller> chain) {
         this.chain = chain;
     }
 

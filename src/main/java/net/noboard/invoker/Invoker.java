@@ -3,17 +3,15 @@ package net.noboard.invoker;
 import java.util.function.Consumer;
 
 public interface Invoker {
-    Invoker call(Consumer<Invoker> consumer);
+    Invoker call(Caller caller);
 
-    Invoker then(Consumer<Invoker> consumer);
+    Invoker then(Caller caller);
 
-    Invoker and(Consumer<Invoker> consumer);
+    Invoker and(Caller caller);
 
-    void reject(Exception e);
+    Invoker abnormal(Consumer<Exception> consumer);
 
-    Invoker catched(Consumer<Exception> consumer);
-
-    Invoker normalEnd(Consumer<Invoker> consumer);
+    Invoker normalEnd(CallerWithoutException consumer);
 
     void start();
 
