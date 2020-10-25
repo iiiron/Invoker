@@ -7,6 +7,7 @@ import net.noboard.invoker.Invoker;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.function.Consumer;
@@ -31,7 +32,7 @@ public class ParallelInvoker implements Invoker {
 
     private static final ExecutorService executorService = Executors.newCachedThreadPool();
 
-    private final ExecutorService executor;
+    private final Executor executor;
 
     /**
      * 是否处在捕获状态
@@ -52,8 +53,8 @@ public class ParallelInvoker implements Invoker {
         this.executor = executorService;
     }
 
-    public ParallelInvoker (ExecutorService executorService) {
-        this.executor = executorService;
+    public ParallelInvoker (Executor executor) {
+        this.executor = executor;
     }
 
     @Override
